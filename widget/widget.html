@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Widget</title>
+</head>
+
+<style>
+  body {
+    margin: 0;
+    padding: 0;
+  }
+  .widgets {
+    width: 100%;
+    max-width: 100vw;
+    position: relative;
+    right: 0;
+    overflow: hidden;
+  }
+  .sr-wwrap {
+    height: auto;
+  }
+</style>
+
+<body>
+  <div id="live-widget" class="widgets">
+    <div>
+      <div id="widget-container" class="sr-widget sr-widget-1"></div>
+    </div>
+  </div>
+
+  <script>
+    let statisticsInterval
+    const sportInfo = {
+      football: { id: 1 },
+      basketball: { id: 2 },
+      iceHockey: { id: 4 },
+      tennis: { id: 5 },
+      volleyball: { id: 23 },
+      boxing: { id: 10 },
+      tableTennis: { id: 20 },
+      badminton: { id: 31 },
+      baseball: { id: 3 },
+    };
+
+    let MATCH_PREVIEW_TABS = {
+      [sportInfo.football.id]: ['matchInfo', 'standings', 'leaders', 'lineups', 'cup', 'playoffs', 'teamStats'],
+      [sportInfo.basketball.id]: ['matchInfo', 'standings', 'leaders', 'lineups', 'teamStats', 'cup', 'playoffs'],
+      [sportInfo.baseball.id]: ['matchInfo', 'standings', 'leaders', 'lineups', 'teamStats', 'cup', 'playoffs'],
+      [sportInfo.iceHockey.id]: ['matchInfo', 'standings', 'leaders', 'lineups', 'teamStats', 'cup', 'playoffs'],
+      [sportInfo.tennis.id]: ['matchInfo', 'playerProfiles', 'standings'],
+      [sportInfo.tableTennis.id]: ['matchInfo', 'standings', 'teamStats', 'cup'],
+      [sportInfo.volleyball.id]: ['matchInfo', 'standings', 'teamStats', 'cup'],
+      [sportInfo.badminton.id]: ['matchInfo', 'standings', 'ranking', 'teamStats', 'cup'],
+    }
+    const _DefaultLanguage = "en";
+    const _DefaultTheme = "bet2y:light";
+    const _DefaultPichLogo = "https://platform-csno-images.s3.eu-west-1.amazonaws.com/radar-widget/B2.png"
+    const _DefaultGoalImage = "https://platform-csno-images.s3.eu-west-1.amazonaws.com/radar-widget/B2.png"
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const matchid = urlParams.get('matchId');
+    const language = urlParams.get('language') || _DefaultLanguage;
+    const theme = urlParams.get('theme') || _DefaultTheme;
+    const matchType = urlParams.get('matchType');
+    const sportId = urlParams.get('sportId');
+    const siteDomain =  '*'
+
+
+    
+    let widgetAttributes = {
+      layout: 'single',
+      disablePitchNoise: true,
+      disablePitchStripes: true,
+      disablePitchOverlay: true,
+      disablePitchSpotlights: true,
+      activeSwitcher: 'scoreDetails',
+      matchId: matchid,
+      tabsPosition: 'top',
+      scoreboard: 'disable',
+      collapseTo: 'disable',
+      pitchLogo: _DefaultPichLogo,
+      goalBannerImage: _DefaultGoalImage,
+    }
+    let attributes = urlParams.get('attributes')
+    try {
+      if (attributes) {
+        attributes = JSON.parse(attributes)
+        if (attributes.matchPreviewTabs) {
+          MATCH_PREVIEW_TABS = { ...MATCH_PREVIEW_TABS, ...attributes.matchPreviewTabs }
+          delete attributes.matchPreviewTabs
+        }
+        widgetAttributes = {
+          ...widgetAttributes, 
+          ...attributes,
+          hidePitchLogo: attributes.hidePitchLogo == false ? false : true,
+          hideGoalImage: attributes.hideGoalImage == false ? false : true,
+        }
+        if (widgetAttributes.matchId) {
+          widgetAttributes = {
+            ...widgetAttributes,
+            pitchLogo: widgetAttributes.hidePitchLogo ? '' : widgetAttributes.pitchLogo,
+            goalBannerImage: widgetAttributes.hideGoalImage ? '' : widgetAttributes.goalBannerImage
+          }
+        }
+      }
+    } catch (error) {
+      console.error('attribute parse error')
+    }
+    
+    (function (a, b, c, d, e, f, g, h, i) {
+      a[e] || (i = a[e] = function () { (a[e].q = a[e].q || []).push(arguments) }, i.l = 1 * new Date, i.o = f,
+        g = b.createElement(c), h = b.getElementsByTagName(c)[0], g.async = 1, g.src = d, g.setAttribute("n", e), h.parentNode.insertBefore(g, h)
+      )
+    })(window, document, "script", "https://widgets.sir-sportradar.com/984c87dccac74331a2261fd032f80dbf/widgetloader", "SIR", {
+      theme: false,
+      language: language?.toLocaleLowerCase()
+    });
+
+    if (matchType === 'live' && window.SIR) {
+      let pitchProps = {};
+      if (sportId == sportInfo.football.id) pitchProps = { pitchCustomBgColor: '#278e51' }
+      window.SIR(
+        'addWidget',
+        '.sr-widget-1',
+        'match.lmtPlus',
+        {
+          ...widgetAttributes,
+          ...pitchProps
+        });
+    } else if (matchType === 'prematch' && window.SIR) {
+      window.SIR(
+        'addWidget',
+        '.sr-widget-1',
+        'match.preview',
+        {
+          disableMoreStats: true,
+          isCollapsed: attributes?.isCollapsed || false,
+          matchId: matchid,
+          tabs: MATCH_PREVIEW_TABS
+        }
+      );
+    }
+
+    if (statisticsInterval) clearInterval(statisticsInterval)
+            
+    statisticsInterval = setInterval(() => {
+      const element = document.getElementById('live-widget')
+      const widget = document.getElementById('widget-container')
+      if (widget?.offsetHeight > 100) {
+        element.style.minHeight = `${widget.offsetHeight}px`
+        if (window.parent) window.parent.postMessage({ width: widget.offsetWidth, height: widget.offsetHeight }, siteDomain);
+      }
+    }, 300)
+
+
+  </script>
+</body>
+
+</html>

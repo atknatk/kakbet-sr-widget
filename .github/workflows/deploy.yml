@@ -1,0 +1,203 @@
+# .github/workflows/deploy.yml
+name: Deploy Kakbet Widget Proxy to Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: true
+        type: string
+      force_deploy:
+        description: 'Force deployment even if same version'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY || '827604626727.dkr.ecr.eu-central-1.amazonaws.com' }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY || 'kakbet/sr-widget-proxy' }}
+  AWS_REGION: eu-central-1
+
+permissions:
+  contents: read
+  id-token: write
+  deployments: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Clean workspace
+        run: |
+          echo "🧹 Cleaning workspace for deployment"
+          if [ -d "${{ github.workspace }}" ]; then
+            cd "${{ github.workspace }}"
+            if [ -d .git ]; then
+              git clean -ffdx || true
+              git reset --hard HEAD || true
+            else
+              rm -rf * .[^.]* || true
+            fi
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Verify image exists
+        run: |
+          IMAGE_URL="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}"
+          echo "🔍 Verifying image exists: $IMAGE_URL"
+          
+          if docker manifest inspect "$IMAGE_URL" > /dev/null 2>&1; then
+            echo "✅ Image verified: $IMAGE_URL"
+          else
+            echo "❌ Image not found: $IMAGE_URL"
+            exit 1
+          fi
+
+      - name: Create deployment
+        uses: actions/github-script@v7
+        id: deployment
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: '${{ github.event.inputs.environment }}',
+              description: 'Deploy Kakbet Widget Proxy v${{ github.event.inputs.image_tag }}',
+              auto_merge: false,
+              required_contexts: []
+            });
+            return deployment.data.id;
+
+      - name: Set deployment status to in_progress
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ steps.deployment.outputs.result }},
+              state: 'in_progress',
+              description: 'Deployment started'
+            });
+
+      - name: Deploy to ${{ github.event.inputs.environment }}
+        id: deploy
+        run: |
+          echo "🚀 Deploying to ${{ github.event.inputs.environment }}"
+          IMAGE_URL="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}"
+          
+          # Environment-specific configuration
+          case "${{ github.event.inputs.environment }}" in
+            "staging")
+              REPLICAS=1
+              RESOURCES_LIMITS_CPU="500m"
+              RESOURCES_LIMITS_MEMORY="512Mi"
+              RESOURCES_REQUESTS_CPU="250m"
+              RESOURCES_REQUESTS_MEMORY="256Mi"
+              ;;
+            "production")
+              REPLICAS=3
+              RESOURCES_LIMITS_CPU="1000m"
+              RESOURCES_LIMITS_MEMORY="1Gi"
+              RESOURCES_REQUESTS_CPU="500m"
+              RESOURCES_REQUESTS_MEMORY="512Mi"
+              ;;
+          esac
+          
+          echo "Configuration for ${{ github.event.inputs.environment }}:"
+          echo "- Image: $IMAGE_URL"
+          echo "- Replicas: $REPLICAS"
+          echo "- CPU Limit: $RESOURCES_LIMITS_CPU"
+          echo "- Memory Limit: $RESOURCES_LIMITS_MEMORY"
+          
+          # Here you would typically deploy to your infrastructure
+          # Examples:
+          # - kubectl apply -f k8s/
+          # - docker-compose up -d
+          # - AWS ECS/Fargate deployment
+          # - Terraform apply
+          
+          echo "✅ Deployment completed successfully"
+          echo "deployment_url=https://widget-proxy-${{ github.event.inputs.environment }}.kakbet.com" >> $GITHUB_OUTPUT
+
+      - name: Health check
+        run: |
+          echo "🏥 Performing health check..."
+          HEALTH_URL="${{ steps.deploy.outputs.deployment_url }}/health"
+          
+          # Wait for service to be ready
+          for i in {1..30}; do
+            if curl -f "$HEALTH_URL" > /dev/null 2>&1; then
+              echo "✅ Health check passed"
+              break
+            fi
+            echo "⏳ Waiting for service to be ready... ($i/30)"
+            sleep 10
+          done
+
+      - name: Set deployment status to success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ steps.deployment.outputs.result }},
+              state: 'success',
+              description: 'Deployment successful',
+              environment_url: '${{ steps.deploy.outputs.deployment_url }}'
+            });
+
+      - name: Set deployment status to failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ steps.deployment.outputs.result }},
+              state: 'failure',
+              description: 'Deployment failed'
+            });
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          EMOJI="✅"
+          if [ "$STATUS" != "success" ]; then
+            EMOJI="❌"
+          fi
+          
+          echo "$EMOJI Deployment to ${{ github.event.inputs.environment }} $STATUS"
+          echo "Image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}"
+          echo "URL: ${{ steps.deploy.outputs.deployment_url }}"

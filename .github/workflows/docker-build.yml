@@ -1,0 +1,280 @@
+# .github/workflows/docker-build.yml
+name: Optimized Docker Build and Push
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile_path:
+        description: 'Dockerfile path'
+        required: false
+        default: 'Dockerfile'
+        type: string
+      ecr_repository:
+        description: 'ECR Repository name'
+        required: false
+        default: 'kakbet/sr-widget-proxy'
+        type: string
+      version:
+        description: 'Version tag'
+        required: true
+        type: string
+      node_version:
+        description: 'Node.js version'
+        required: false
+        default: '18'
+        type: string
+      platforms:
+        description: 'Target platforms'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+        type: string
+      build_context:
+        description: 'Build context path'
+        required: false
+        default: '.'
+        type: string
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'staging'
+        type: string
+      enable_security_scan:
+        description: 'Enable security scanning'
+        required: false
+        default: true
+        type: boolean
+      cache_mode:
+        description: 'Cache mode (min, max)'
+        required: false
+        default: 'max'
+        type: string
+    outputs:
+      image_url:
+        description: "Full Docker image URL"
+        value: ${{ jobs.docker-build.outputs.image_url }}
+      image_digest:
+        description: "Image digest"
+        value: ${{ jobs.docker-build.outputs.image_digest }}
+      image_size:
+        description: "Image size in MB"
+        value: ${{ jobs.docker-build.outputs.image_size }}
+    secrets:
+      AWS_ROLE_ARN:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      ECR_REGISTRY:
+        required: false
+
+env:
+  AWS_REGION: eu-central-1
+  BUILDKIT_PROGRESS: plain
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+
+    outputs:
+      image_url: ${{ steps.analyze.outputs.image_url }}
+      image_digest: ${{ steps.build.outputs.digest }}
+      image_size: ${{ steps.analyze.outputs.size_mb }}
+
+    steps:
+      - name: Clean workspace
+        run: |
+          echo "🧹 Cleaning workspace for Docker build"
+          if [ -d "${{ github.workspace }}" ]; then
+            cd "${{ github.workspace }}"
+            if [ -d .git ]; then
+              git clean -ffdx || true
+              git reset --hard HEAD || true
+            else
+              rm -rf * .[^.]* || true
+            fi
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate inputs
+        run: |
+          echo "🔍 Validating build inputs..."
+          echo "Dockerfile: ${{ inputs.dockerfile_path }}"
+          echo "Repository: ${{ inputs.ecr_repository }}"
+          echo "Version: ${{ inputs.version }}"
+          echo "Node.js: ${{ inputs.node_version }}"
+          echo "Platforms: ${{ inputs.platforms }}"
+          echo "Environment: ${{ inputs.environment }}"
+
+          if [ ! -f "${{ inputs.dockerfile_path }}" ]; then
+            echo "❌ Dockerfile not found: ${{ inputs.dockerfile_path }}"
+            exit 1
+          fi
+
+          if [ ! -f "package.json" ]; then
+            echo "❌ package.json not found"
+            exit 1
+          fi
+
+          echo "✅ Input validation completed"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: false
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          mask-password: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: ${{ inputs.platforms }}
+          driver-opts: |
+            network=host
+          buildkitd-flags: |
+            --allow-insecure-entitlement security.insecure
+            --allow-insecure-entitlement network.host
+
+      - name: Prepare build metadata
+        id: meta
+        run: |
+          # Registry configuration
+          ECR_REGISTRY="${{ secrets.ECR_REGISTRY || '827604626727.dkr.ecr.eu-central-1.amazonaws.com' }}"
+          REPOSITORY="${{ inputs.ecr_repository }}"
+          VERSION="${{ inputs.version }}"
+
+          # Image tags
+          TAGS="${ECR_REGISTRY}/${REPOSITORY}:${VERSION}"
+          TAGS="${TAGS},${ECR_REGISTRY}/${REPOSITORY}:latest"
+
+          # Build arguments
+          BUILD_ARGS="VERSION=${VERSION}"
+          BUILD_ARGS="${BUILD_ARGS},NODE_VERSION=${{ inputs.node_version }}"
+          BUILD_ARGS="${BUILD_ARGS},BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          BUILD_ARGS="${BUILD_ARGS},GIT_COMMIT=${{ github.sha }}"
+          BUILD_ARGS="${BUILD_ARGS},GIT_BRANCH=${{ github.ref_name }}"
+
+          # OCI Labels
+          LABELS="org.opencontainers.image.title=Kakbet Widget Proxy"
+          LABELS="${LABELS},org.opencontainers.image.description=Enterprise-grade Widget Proxy Service"
+          LABELS="${LABELS},org.opencontainers.image.version=${VERSION}"
+          LABELS="${LABELS},org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          LABELS="${LABELS},org.opencontainers.image.revision=${{ github.sha }}"
+          LABELS="${LABELS},org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}"
+          LABELS="${LABELS},org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}"
+          LABELS="${LABELS},org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/main/README.md"
+          LABELS="${LABELS},org.opencontainers.image.licenses=MIT"
+          LABELS="${LABELS},com.kakbet.node.version=${{ inputs.node_version }}"
+          LABELS="${LABELS},com.kakbet.framework=express"
+          LABELS="${LABELS},com.kakbet.environment=${{ inputs.environment }}"
+
+          echo "registry=${ECR_REGISTRY}" >> $GITHUB_OUTPUT
+          echo "repository=${REPOSITORY}" >> $GITHUB_OUTPUT
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "build_args=${BUILD_ARGS}" >> $GITHUB_OUTPUT
+          echo "labels=${LABELS}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "image_url=${ECR_REGISTRY}/${REPOSITORY}:${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile_path }}
+          platforms: ${{ inputs.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: ${{ steps.meta.outputs.build_args }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=${{ inputs.cache_mode }}
+          provenance: true
+          sbom: true
+          outputs: type=image,name=${{ steps.meta.outputs.image_url }},push=true
+
+      - name: Analyze image
+        id: analyze
+        run: |
+          echo "🔍 Analyzing built image..."
+          IMAGE_URL="${{ steps.meta.outputs.image_url }}"
+
+          # Get image size
+          SIZE_BYTES=$(docker manifest inspect "$IMAGE_URL" | jq -r '.config.size // 0')
+          SIZE_MB=$((SIZE_BYTES / 1024 / 1024))
+
+          # Get layer count
+          LAYER_COUNT=$(docker manifest inspect "$IMAGE_URL" | jq -r '.layers | length')
+
+          echo "📊 Image Analysis Results:"
+          echo "- Image URL: $IMAGE_URL"
+          echo "- Size: ${SIZE_MB}MB"
+          echo "- Layers: $LAYER_COUNT"
+          echo "- Platforms: ${{ inputs.platforms }}"
+
+          echo "size_mb=$SIZE_MB" >> $GITHUB_OUTPUT
+          echo "layer_count=$LAYER_COUNT" >> $GITHUB_OUTPUT
+          echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
+
+      - name: Security scan with Trivy
+        if: inputs.enable_security_scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta.outputs.image_url }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        if: inputs.enable_security_scan && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate build report
+        if: always()
+        run: |
+          echo "## 🎯 Kakbet Widget Proxy Build Report" > build_report.md
+          echo "" >> build_report.md
+          echo "### 📊 Build Information" >> build_report.md
+          echo "- **Image**: \`${{ steps.meta.outputs.image_url }}\`" >> build_report.md
+          echo "- **Version**: \`${{ steps.meta.outputs.version }}\`" >> build_report.md
+          echo "- **Node.js Version**: \`${{ inputs.node_version }}\`" >> build_report.md
+          echo "- **Platforms**: \`${{ inputs.platforms }}\`" >> build_report.md
+          echo "- **Environment**: \`${{ inputs.environment }}\`" >> build_report.md
+          echo "- **Build Date**: \`$(date -u +'%Y-%m-%d %H:%M:%S UTC')\`" >> build_report.md
+          echo "- **Git Commit**: \`${{ github.sha }}\`" >> build_report.md
+          echo "- **Dockerfile**: \`${{ inputs.dockerfile_path }}\`" >> build_report.md
+          echo "" >> build_report.md
+          echo "### 📈 Performance Metrics" >> build_report.md
+          echo "- **Image Size**: \`${{ steps.analyze.outputs.size_mb }}MB\`" >> build_report.md
+          echo "- **Layer Count**: \`${{ steps.analyze.outputs.layer_count }}\`" >> build_report.md
+          echo "- **Cache Mode**: \`${{ inputs.cache_mode }}\`" >> build_report.md
+          echo "- **Security Scan**: \`${{ inputs.enable_security_scan && 'Enabled' || 'Disabled' }}\`" >> build_report.md
+          echo "" >> build_report.md
+          echo "### 🚀 Quick Deploy" >> build_report.md
+          echo "\`\`\`bash" >> build_report.md
+          echo "docker pull ${{ steps.meta.outputs.image_url }}" >> build_report.md
+          echo "docker run -d --name kakbet-widget-proxy -p 8001:8001 ${{ steps.meta.outputs.image_url }}" >> build_report.md
+          echo "\`\`\`" >> build_report.md
+
+      - name: Upload build report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-report-${{ steps.meta.outputs.version }}
+          path: build_report.md
+          retention-days: 30

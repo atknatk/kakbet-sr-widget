@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KakBet Widget Proxy Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            color: #00ff88;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        }
+
+        .header p {
+            color: #cccccc;
+            font-size: 1.1rem;
+        }
+
+        .status {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .status-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px 20px;
+            border-radius: 10px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .status-item h3 {
+            color: #00ff88;
+            margin-bottom: 5px;
+        }
+
+        .status-item p {
+            color: #cccccc;
+            font-size: 0.9rem;
+        }
+
+        .widget-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .widget-container h2 {
+            color: #00ff88;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .sr-widget-container {
+            min-height: 400px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            border: 2px dashed rgba(0, 255, 136, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #cccccc;
+            font-size: 1.1rem;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #00ff88, #00cc6a);
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 255, 136, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .logs {
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 3px;
+        }
+
+        .log-success {
+            color: #00ff88;
+        }
+
+        .log-error {
+            color: #ff4444;
+        }
+
+        .log-info {
+            color: #4488ff;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            color: #888;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .status {
+                flex-direction: column;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+
+            /* Show only Loader Preview section */
+            .header, .status, .widget-container:not(.loader-preview), .logs, .footer {
+                display: none !important;
+            }
+            .loader-controls {
+                display: flex;
+                gap: 10px;
+                justify-content: center;
+                margin: 10px 0 20px;
+            }
+            .loader-controls input {
+                padding: 8px 12px;
+                border-radius: 6px;
+                border: 1px solid rgba(255,255,255,0.2);
+                background: rgba(255,255,255,0.1);
+                color: #fff;
+            }
+            .loader-controls button {
+                padding: 10px 16px;
+                border-radius: 6px;
+                border: none;
+                background: #00ff88;
+                color: #000;
+                font-weight: bold;
+                cursor: pointer;
+            }
+
+
+      /*
+Using formula solid
+$primary: #1AA8F8;
+$home: #1AA8F8;
+$away: #FF0000;
+$cl: #FFFFFF;
+$base: #10222B;
+*/
+
+
+    </style>
+
+</head>
+<body>
+    <div class="container">
+        <div class="widget-container loader-preview">
+            <div class="loader-controls">
+                <input id="matchIdInput" type="text" placeholder="Enter Match ID" value="61939220" />
+                <button id="loadMatchBtn">Load</button>
+            </div>
+            <div class="sr-widget-container">
+                <iframe
+                    id="previewFrame"
+                    src="http://localhost:8001/loader/preview.html"
+                    width="100%"
+                    height="900"
+                    frameborder="0"
+                    style="border: 1px solid #333; border-radius: 8px; background: rgba(0,0,0,0.5);">
+                </iframe>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let logContainer = document.querySelector('.logs');
+
+
+        async function checkHealth() {
+            try {
+                const response = await fetch('http://localhost:8001/health');
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('proxy-status').textContent = '✅ Online';
+                    document.getElementById('cache-status').textContent = `${data.cache} items`;
+                } else {
+                    throw new Error('Health check failed');
+                }
+            } catch (error) {
+                document.getElementById('proxy-status').textContent = '❌ Offline';
+            }
+        }
+
+        function clearWidget() {
+            const widgetArea = document.getElementById('widget-area');
+            widgetArea.innerHTML = '🎯 Widget cleared - Click a button above to load SportRadar widget';
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            checkHealth();
+
+            // Auto-check health every 30 seconds
+            setInterval(checkHealth, 30000);
+        });
+
+        // Monitor and intercept network requests
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            let url = args[0];
+            let options = args[1] || {};
+
+            // Intercept SportRadar API calls
+            if (typeof url === 'string') {
+                if (url.includes('ws-fn.sir-sportradar.com')) {
+                    const apiPath = url.replace('https://ws-fn.sir-sportradar.com/', '');
+                    url = `http://localhost:8001/api/ws-fn/${apiPath}`;
+                } else if (url.includes('lt-fn.sir-sportradar.com')) {
+                    const apiPath = url.replace('https://lt-fn.sir-sportradar.com/', '');
+                    url = `http://localhost:8001/api/lt-fn/${apiPath}`;
+                } else if (url.includes('localhost:8001')) {
+                }
+
+                // Update the URL in args
+                args[0] = url;
+            }
+
+            return originalFetch.apply(this, args);
+        };
+        // Loader Preview controls
+        (function() {
+            function updatePreview() {
+                var input = document.getElementById('matchIdInput');
+                var frame = document.getElementById('previewFrame');
+                if (!input || !frame) return;
+                var mid = (input.value || '').trim();
+                if (!/^[0-9]+$/.test(mid)) { return; }
+                frame.src = 'http://localhost:8001/loader/preview.html?matchId=' + mid;
+            }
+            var btn = document.getElementById('loadMatchBtn');
+            var inp = document.getElementById('matchIdInput');
+            if (btn && inp) {
+                btn.addEventListener('click', updatePreview);
+                inp.addEventListener('keydown', function(e){ if (e.key === 'Enter') updatePreview(); });
+            }
+        })();
+
+    </script>
+</body>
+</html>

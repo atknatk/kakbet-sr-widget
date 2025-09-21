@@ -1,0 +1,73 @@
+# Widget Proxy Provider Configuration
+providers:
+  sportradar:
+    name: "SportRadar"
+    baseUrl: "https://widgets.sir-sportradar.com"
+    widgetId: "984c87dccac74331a2261fd032f80dbf"
+    
+    # Widget types and their configurations
+    widgetTypes:
+      "match.lmtPlus":
+        path: "/{widgetId}/widgetloader"
+        description: "Live Match Tracker Plus"
+        assets:
+          - "/assets/**/*"
+          - "/js/**/*"
+          - "/css/**/*"
+      
+      "match.preview":
+        path: "/{widgetId}/widgetloader"
+        description: "Match Preview Widget"
+        assets:
+          - "/assets/**/*"
+          - "/js/**/*"
+          - "/css/**/*"
+      
+      "match.lmt":
+        path: "/{widgetId}/widgetloader"
+        description: "Live Match Tracker"
+        assets:
+          - "/assets/**/*"
+          - "/js/**/*"
+          - "/css/**/*"
+    
+    # HTTP headers to send with requests
+    headers:
+      User-Agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+      Accept: "*/*"
+      Accept-Encoding: "gzip, deflate, br"
+      Referer: "https://kakbet.com"
+    
+    # Cache settings for different resource types
+    cache:
+      scripts: 300      # 5 minutes for widget scripts
+      assets: 3600      # 1 hour for static assets
+      chunks: 1800      # 30 minutes for JS chunks
+    
+    # CORS and security settings
+    security:
+      allowCredentials: false
+      maxAge: 86400
+      allowedMethods: ["GET", "POST", "OPTIONS"]
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+
+# Global cache configuration
+cache:
+  defaultTtl: 300
+  maxKeys: 1000
+  checkPeriod: 600
+
+# Security settings
+security:
+  allowedOrigins: ["*"]
+  maxRequestSize: "10mb"
+  rateLimit:
+    windowMs: 60000   # 1 minute
+    max: 100          # requests per window
+
+# Logging configuration
+logging:
+  level: "info"
+  format: "simple"
+  includeTimestamp: true
+  includeLevel: true
